@@ -51,7 +51,7 @@
     "test": "vitest run",
     "test:ci-scope": "vitest run --typecheck"
   },
-  "dependencies": {
+  "optionalDependencies": {
     "@deepseek-ai/dsh": "0.1.5-rc.2"
   },
   "devDependencies": {
