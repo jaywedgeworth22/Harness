@@ -2,48 +2,33 @@
 /**
  * Re-assert the Tailscale Serve mapping for Harness web.
  *
- * Idempotent.  Does not enable Funnel (tailnet only).  Failure is non-fatal
- * (web still binds loopback).
+ * Same mapping as `scripts/serve-tailscale.sh`: `tailscale serve --bg --https PORT TARGET`.
+ * Idempotent.  Does not enable Funnel (tailnet only).  Missing binary is non-fatal.
  */
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 
 const PORT = process.env.DSH_WEB_PORT ?? "3080";
 const TAILNET_HOST = process.env.HARNESS_TAILNET_HOST ?? "macbook.boa-roygbiv.ts.net";
 
 const TAILSCALE_PATHS = [
   "/Applications/Tailscale.app/Contents/MacOS/tailscale",
-  "/usr/local/bin/tailscale",
   "/opt/homebrew/bin/tailscale",
+  "/usr/local/bin/tailscale",
 ];
 
 function findTailscale(): string | null {
   for (const candidate of TAILSCALE_PATHS) {
-    try {
-      const child = spawn("/bin/test", ["-x", candidate], { stdio: "ignore" });
-      child.on("exit", (code) => {
-        if (code === 0) {
-          // found
-        }
-      });
-    } catch {
-      /* keep looking */
-    }
-  }
-  // Simpler synchronous probe; tailscale binary is always at one of these on macOS.
-  for (const candidate of TAILSCALE_PATHS) {
-    if (existsSyncSync(candidate)) return candidate;
+    if (existsSync(candidate)) return candidate;
   }
   return null;
 }
 
-// Cheap synchronous probe so the rest of the file stays async-only.
-import { existsSync as existsSyncSync } from "node:fs";
-
 async function run(bin: string, args: string[]): Promise<number> {
-  return new Promise((resolve) => {
+  return new Promise((resolvePromise) => {
     const child = spawn(bin, args, { stdio: "inherit" });
-    child.on("error", () => resolve(-1));
-    child.on("exit", (code) => resolve(code ?? -1));
+    child.on("error", () => resolvePromise(-1));
+    child.on("exit", (code) => resolvePromise(code ?? -1));
   });
 }
 
@@ -54,21 +39,13 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const url = `https://${TAILNET_HOST}:${PORT}`;
   const target = `http://127.0.0.1:${PORT}`;
-
+  const url = `https://${TAILNET_HOST}:${PORT}`;
   process.stderr.write(`serve-tailscale: mapping ${url} -> ${target}\n`);
-  // --bg=false so we observe the result inline.  Idempotent: re-running
-  // overwrites the existing mapping.
-  const code = await run(bin, ["serve", "--bg=false", `--https=${PORT}`, "off"]);
-  if (code !== 0 && code !== 1) {
-    // off may fail when no mapping exists yet — not fatal.
-    process.stderr.write(`serve-tailscale: clear-existing returned ${code}\n`);
-  }
-  const setCode = await run(bin, ["serve", "--bg=false", `--https=${PORT}`, "on", target]);
-  if (setCode !== 0) {
-    process.stderr.write(`serve-tailscale: set returned ${setCode}\n`);
-    process.exit(setCode);
+  const code = await run(bin, ["serve", "--bg", "--https", PORT, target]);
+  if (code !== 0) {
+    process.stderr.write(`serve-tailscale: set returned ${code}\n`);
+    process.exit(code);
   }
   process.stderr.write(`serve-tailscale: ${url} -> ${target} (tailnet only)\n`);
 }

@@ -2,3 +2,4 @@
 # MiniMax has no upstream CLI / ACP / sandbox today, so this profile is
 # intentionally minimal — the mmh-acp.py bridge wraps the MM HTTP API and
 # synthesizes ACP frames around it.  No cordis rows are activated.
+[]

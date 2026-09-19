@@ -1,53 +1,36 @@
 #!/usr/bin/env node
 /**
  * Activate the Harness Dock app window, or fall back to opening the URL.
+ * On-disk name is `Harness.app`; bundle id `com.jays.dsh-harness-web`.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const APP = join(homedir(), "Applications", "Harness Web.app");
-const ENSURE = join(homedir(), "apps", "harness-runtime", "ensure-web.ts");
-const URL = process.env.HARNESS_WEB_URL ?? `http://127.0.0.1:${process.env.DSH_WEB_PORT ?? "3080"}/`;
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const SCRIPT = resolve(ROOT, "scripts", "open-harness.sh");
+const APP = join(homedir(), "Applications", "Harness.app");
 
 function log(line: string): void {
   process.stderr.write(`open-harness: ${line}\n`);
 }
 
-async function openApp(path: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const child = spawn("/usr/bin/open", ["-a", path], { stdio: "ignore" });
-    child.on("error", () => resolve(false));
-    child.on("exit", (code) => resolve(code === 0));
+if (existsSync(SCRIPT)) {
+  const child = spawn(SCRIPT, [], {
+    stdio: "inherit",
+    env: { ...process.env, HARNESS_RUNTIME_ROOT: ROOT },
   });
-}
-
-async function openUrl(url: string): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const child = spawn("/usr/bin/open", [url], { stdio: "ignore" });
-    child.on("error", () => resolve());
-    child.on("exit", () => resolve());
+  child.on("exit", (code) => process.exit(code ?? 0));
+} else if (existsSync(APP)) {
+  const child = spawn("/usr/bin/open", ["-a", APP], { stdio: "ignore" });
+  child.on("exit", (code) => {
+    log(`activated ${APP}`);
+    process.exit(code ?? 0);
   });
+} else {
+  const url = process.env.HARNESS_WEB_URL ?? `http://127.0.0.1:${process.env.DSH_WEB_PORT ?? "3080"}/`;
+  spawn("/usr/bin/open", [url], { stdio: "ignore" }).on("exit", () => process.exit(0));
 }
-
-async function main(): Promise<void> {
-  if (existsSync(APP)) {
-    const ok = await openApp(APP);
-    if (ok) {
-      log(`activated ${APP}`);
-      return;
-    }
-  }
-  if (existsSync(ENSURE)) {
-    await new Promise<void>((resolve) => {
-      const child = spawn("/opt/homebrew/bin/tsx", [ENSURE], { stdio: "ignore" });
-      child.on("error", () => resolve());
-      child.on("exit", () => resolve());
-    });
-  }
-  log(`opening ${URL}`);
-  await openUrl(URL);
-}
-
-await main();

@@ -70,18 +70,41 @@ npm run typecheck # tsc --noEmit
 npm run test      # vitest run
 
 # Live install on the owner's Mac (bash, current)
-~/apps/harness-runtime/start-web.sh       # pm2 harness-web
-~/apps/harness-runtime/serve-tailscale.sh # tailnet serve
-~/apps/harness-runtime/ensure-web.sh      # recovery loop
-~/apps/harness-runtime/open-harness.sh    # dock app activator
-~/apps/harness-runtime/install-dock-app.sh # rebuild ~/Applications/Harness Web.app
+~/apps/harness-runtime/scripts/start-web.sh        # pm2 harness-web
+~/apps/harness-runtime/scripts/serve-tailscale.sh  # tailnet serve
+~/apps/harness-runtime/scripts/ensure-web.sh       # recovery loop
+~/apps/harness-runtime/dsh-acp.sh                  # Shellular id deepseek (root shim)
+~/apps/harness-runtime/mmh-acp.sh                  # Shellular id minimax (root shim)
+```
+
+Root shims (`dsh-acp.sh`, `mmh-acp.sh`, `start-web.sh`, …) exec the copies
+under `scripts/` so both the documented live-install paths and the pm2
+`scripts/` path work.
+
+## Package
+
+BotFleet and other TypeScript consumers install this repo as an npm git
+dependency.  Full export table: [`docs/package.md`](./docs/package.md).
+
+```json
+"harness": "github:jaywedgeworth22/Harness#main"
+```
+
+```ts
+import { dshSupport } from "harness/dsh/acp";
+import { writeDshMcpPatch } from "harness/dsh/mcp-patch";
+import { mmhSupport } from "harness/mmh/acp";
 ```
 
 ## Consumers
 
-This repo is canonical for the DSH ACP driver and the MMH ACP bridge.  BotFleet imports from `jaywedgeworth22/harness` via npm git dependency.  ai-fleet-coordinator tracks the live-install scripts.
+This repo is canonical for the DSH ACP driver and the MMH ACP bridge.  BotFleet
+imports from `jaywedgeworth22/Harness` via the npm git dependency above.
+ai-fleet-coordinator registers the app (`HR`) and points pm2 `harness-web`
+at this live install.
 
-**Never edit driver or bridge code in BotFleet.**  Edit it here, in `src/dsh/acp/` or `src/mmh/acp/`.  BotFleet and AFC consume via PR.
+**Never edit driver or bridge code in BotFleet.**  Edit it here, in
+`src/dsh/acp/` or `src/mmh/acp/`.  BotFleet and AFC consume via PR.
 
 ## Why two harnesses
 
@@ -105,7 +128,3 @@ Each profile in `src/profiles/<name>/` is fully independent:
 - `local.patch.yml.example` — a per-machine override template (the operator's lever)
 
 Per-use-case feature depth is open-ended: any profile may independently disable plugins, set thinking effort, set turn budgets, set tool allowlists, override cordis config.  The Harness repo ships the framework and four canonical examples; the operator tunes the matrix on each machine.
-
-## License
-
-UNLICENSED — private repo, owner-only.

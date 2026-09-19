@@ -2,6 +2,11 @@
 node_modules/
 .pnpm-store/
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
 # Build output
 dist/
 *.tsbuildinfo

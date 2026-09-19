@@ -10,12 +10,12 @@ record.
 | Was | Is now |
 |---|---|
 | `~/apps/dsh-runtime/` (live install) | `~/apps/harness-runtime/` (symlink → `~/Code/Harness/`) |
-| `~/apps/dsh-runtime/start-web.sh` | `~/apps/harness-runtime/start-web.ts` (TS, npm bin) |
-| `~/apps/dsh-runtime/serve-tailscale.sh` | `~/apps/harness-runtime/serve-tailscale.ts` |
-| `~/apps/dsh-runtime/open-harness.sh` | `~/apps/harness-runtime/open-harness.ts` |
-| `~/apps/dsh-runtime/ensure-web.sh` | `~/apps/harness-runtime/ensure-web.ts` |
-| `~/apps/dsh-runtime/install-dock-app.sh` + `HarnessWindow.swift` | `~/apps/harness-runtime/install-dock-app.ts` |
-| `~/apps/dsh-runtime/dsh-acp.sh` + `dsh-acp.py` | `~/apps/harness-runtime/dsh-acp.sh` + `bridges/dsh/dsh-acp.py` |
+| `~/apps/dsh-runtime/start-web.sh` | `~/apps/harness-runtime/scripts/start-web.sh` (root shim also) |
+| `~/apps/dsh-runtime/serve-tailscale.sh` | `~/apps/harness-runtime/scripts/serve-tailscale.sh` |
+| `~/apps/dsh-runtime/open-harness.sh` | `~/apps/harness-runtime/scripts/open-harness.sh` |
+| `~/apps/dsh-runtime/ensure-web.sh` | `~/apps/harness-runtime/scripts/ensure-web.sh` |
+| `~/apps/dsh-runtime/install-dock-app.sh` + `HarnessWindow.swift` | `scripts/install-dock-app.sh` + `src/web/dock-app/HarnessWindow.swift` |
+| `~/apps/dsh-runtime/dsh-acp.sh` + `dsh-acp.py` | `dsh-acp.sh` + `bridges/dsh/dsh-acp.py` |
 | `~/.dsh/profiles/headless/` | `~/.dsh/profiles/dsh-headless/` (renamed) |
 | `~/.dsh/settings-headless.yaml` | `~/.dsh/settings-dsh-headless.yaml` |
 | (new) | `~/.dsh/profiles/mmh-headless/` + `mmh-web/` |

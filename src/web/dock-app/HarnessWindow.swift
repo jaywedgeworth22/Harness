@@ -27,7 +27,7 @@ private func pingHarness() -> Bool {
 
 private func ensureServer() {
     if pingHarness() { return }
-    let script = NSHomeDirectory() + "/apps/harness-runtime/ensure-web.ts"
+    let script = NSHomeDirectory() + "/apps/harness-runtime/scripts/ensure-web.sh"
     guard FileManager.default.isExecutableFile(atPath: script) else { return }
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: "/bin/bash")

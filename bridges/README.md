@@ -32,9 +32,10 @@ bridges/
     └── mmh-acp.py        # MiniMax Harness → ACP (HTTP adapter)
 ```
 
-The `dsh-acp.sh` and `mmh-acp.sh` shell wrappers live alongside the bridges
-in the live install (`~/apps/harness-runtime/`); they set the env vars
-each bridge reads and `exec` the bridge under `/opt/homebrew/bin/python3`.
+The `dsh-acp.sh` and `mmh-acp.sh` shell wrappers live in `scripts/` and
+as root shims at the repo root (the live-install paths Shellular uses).
+They set the env vars each bridge reads and `exec` the Python under
+`/opt/homebrew/bin/python3`.
 
 ## Auth
 

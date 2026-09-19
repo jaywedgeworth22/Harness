@@ -1,9 +1,41 @@
 {
   "name": "harness",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "license": "Apache-2.0",
   "description": "Friendly adaptation of @deepseek-ai/dsh extended for DSH and MiniMax harness parity.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaywedgeworth22/Harness.git"
+  },
+  "homepage": "https://github.com/jaywedgeworth22/Harness",
+  "bugs": {
+    "url": "https://github.com/jaywedgeworth22/Harness/issues"
+  },
+  "files": [
+    "src",
+    "bridges",
+    "scripts",
+    "docs",
+    "assets",
+    "NOTICE",
+    "LICENSE",
+    "README.md",
+    "AGENTS.md"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./dsh/acp": "./src/dsh/acp/driver.ts",
+    "./dsh/acp/driver": "./src/dsh/acp/driver.ts",
+    "./dsh/mcp-patch": "./src/dsh/acp/mcp-patch.ts",
+    "./mmh/acp": "./src/mmh/acp/driver.ts",
+    "./mmh/acp/driver": "./src/mmh/acp/driver.ts",
+    "./mmh/http-client": "./src/mmh/http-client/index.ts",
+    "./shared/contracts": "./src/shared/contracts.ts",
+    "./shared/acp-core": "./src/shared/acp-core.ts",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "harness-web": "./src/web/start-web.ts",
     "harness-serve-tailscale": "./src/web/serve-tailscale.ts",
@@ -30,23 +62,5 @@
   },
   "engines": {
     "node": ">=22.0.0"
-  },
-  "exports": {
-    "./dsh/acp": {
-      "types": "./src/dsh/acp/driver.ts",
-      "default": "./src/dsh/acp/driver.ts"
-    },
-    "./dsh/bridge": {
-      "types": "./bridges/dsh/dsh-acp.py",
-      "default": "./bridges/dsh/dsh-acp.py"
-    },
-    "./mmh/bridge": {
-      "types": "./bridges/mmh/mmh-acp.py",
-      "default": "./bridges/mmh/mmh-acp.py"
-    },
-    "./shared/cordis-patch": {
-      "types": "./src/shared/cordis-patch.ts",
-      "default": "./src/shared/cordis-patch.ts"
-    }
   }
 }

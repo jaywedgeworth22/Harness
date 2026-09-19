@@ -6,12 +6,14 @@
 set -euo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
-LIVE="${HOME}/apps/dsh-runtime"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
+LIVE="${HARNESS_RUNTIME_ROOT:-${HOME}/apps/harness-runtime}"
 APP="${HOME}/Applications/Harness.app"
 PNG="${ROOT}/assets/harness-icon-1024.png"
 [[ -f "$PNG" ]] || PNG="${LIVE}/assets/harness-icon-1024.png"
-SWIFT="${ROOT}/HarnessWindow.swift"
+SWIFT="${ROOT}/src/web/dock-app/HarnessWindow.swift"
+[[ -f "$SWIFT" ]] || SWIFT="${ROOT}/HarnessWindow.swift"
 [[ -f "$SWIFT" ]] || SWIFT="${LIVE}/HarnessWindow.swift"
 
 if [[ ! -f "$PNG" ]]; then
@@ -75,20 +77,17 @@ PLIST
 echo -n "APPL????" > "$APP/Contents/PkgInfo"
 codesign --force --deep -s - "$APP" >/dev/null 2>&1 || true
 
-mkdir -p "${LIVE}/assets"
-cp "$SWIFT" "${LIVE}/HarnessWindow.swift"
-cp "${ROOT}/ensure-web.sh" "${LIVE}/ensure-web.sh"
-cp "${ROOT}/open-harness.sh" "${LIVE}/open-harness.sh"
-cp "$PNG" "${LIVE}/assets/harness-icon-1024.png"
-cp "$ROOT/install-dock-app.sh" "${LIVE}/install-dock-app.sh"
-chmod 755 "${LIVE}/ensure-web.sh" "${LIVE}/open-harness.sh" "${LIVE}/install-dock-app.sh"
-if [[ -f "${ROOT}/dsh.sh" ]]; then
-  cp "${ROOT}/dsh.sh" "${LIVE}/dsh.sh"
-  chmod 755 "${LIVE}/dsh.sh"
-fi
-if [[ -f "${ROOT}/start-web.sh" ]]; then
-  cp "${ROOT}/start-web.sh" "${LIVE}/start-web.sh"
-  chmod 755 "${LIVE}/start-web.sh"
+# LIVE is a symlink to this repo on the owner's Mac.  Copying onto itself
+# is a no-op at best and a loop at worst.
+live_real="$(cd "$LIVE" 2>/dev/null && pwd -P || true)"
+root_real="$(cd "$ROOT" && pwd -P)"
+if [[ -n "$live_real" && "$live_real" != "$root_real" ]]; then
+  mkdir -p "${LIVE}/assets"
+  cp "$SWIFT" "${LIVE}/HarnessWindow.swift"
+  cp "${ROOT}/scripts/ensure-web.sh" "${LIVE}/scripts/ensure-web.sh"
+  cp "${ROOT}/scripts/open-harness.sh" "${LIVE}/scripts/open-harness.sh"
+  cp "$PNG" "${LIVE}/assets/harness-icon-1024.png"
+  chmod 755 "${LIVE}/scripts/ensure-web.sh" "${LIVE}/scripts/open-harness.sh"
 fi
 
 if command -v dockutil >/dev/null 2>&1; then
