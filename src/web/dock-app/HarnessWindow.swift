@@ -105,7 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         window.title = "Harness"
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.setFrameAutosaveName("DshHarnessMain")
+        window.setFrameAutosaveName("ServicesJaysHarnessMain")
         window.tabbingMode = .disallowed
 
         let config = WKWebViewConfiguration()
