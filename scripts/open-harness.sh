@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Open (or focus) the local Harness window.  No Terminal.
 # Display name "Harness"; on-disk name `Harness.app`; bundle id
-# `com.jays.dsh-harness-web`.
+# `services.jays.harness`.
 set -euo pipefail
 APP="${HOME}/Applications/Harness.app"
 LIVE="${HARNESS_RUNTIME_ROOT:-${HOME}/apps/harness-runtime}"

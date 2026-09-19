@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Activate the Harness Dock app window, or fall back to opening the URL.
- * On-disk name is `Harness.app`; bundle id `com.jays.dsh-harness-web`.
+ * On-disk name is `Harness.app`; bundle id `services.jays.harness`.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";

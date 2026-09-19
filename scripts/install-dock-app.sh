@@ -3,6 +3,8 @@
 # Dock running-dot) and pin it to the Dock.  Icon is a full-bleed 1:1 square,
 # sharp 90° corners.  Display name "Harness"; bundle id kept stable as
 # com.jays.dsh-harness-web so existing Dock pins and saved frames survive.
+# 2026-09-19: bundle id renamed to services.jays.harness.  Dock pin and saved
+# frames do NOT survive the rename — re-pin after install.
 set -euo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
@@ -56,7 +58,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>Harness</string>
   <key>CFBundleExecutable</key><string>DeepSeekHarness</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>CFBundleIdentifier</key><string>com.jays.dsh-harness-web</string>
+  <key>CFBundleIdentifier</key><string>services.jays.harness</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>Harness</string>
   <key>CFBundlePackageType</key><string>APPL</string>
