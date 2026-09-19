@@ -81,6 +81,23 @@ Root shims (`dsh-acp.sh`, `mmh-acp.sh`, `start-web.sh`, …) exec the copies
 under `scripts/` so both the documented live-install paths and the pm2
 `scripts/` path work.
 
+## Icons
+
+Two 1024×1024 masters live in [`assets/`](./assets), both full-bleed RGB
+with no rounded corners and no alpha channel — the OS applies its own
+squircle mask at display time (macOS for the Dock app, iOS / App Store
+Connect for any TestFlight upload).
+
+- `harness-icon-1024.png` — **MMH** (the canonical, used by
+  `scripts/install-dock-app.sh` to build `~/Applications/Harness.app`).
+  MiniMax logo on top, `HARNESS` wordmark below.  This is the local
+  owner-facing brand for the framework.
+- `harness-icon-dsh-whale-1024.png` — **DSH** (sibling asset for DSH
+  upstream references — README callouts, profile docs, the
+  `src/dsh/acp/` module).  DeepSeek whale silhouette on top, `HARNESS`
+  wordmark below.  Use this whenever the doc is talking about the
+  DeepSeek engine rather than the framework.
+
 ## Package
 
 BotFleet and other TypeScript consumers install this repo as an npm git
