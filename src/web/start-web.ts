@@ -2,49 +2,45 @@
 /**
  * Harness web UI — loopback bind + Tailscale Serve receiver.
  *
- * Equivalent of the prior `~/apps/dsh-runtime/start-web.sh`:
- *   1. reclaim :PORT if a stale harness process holds it (only when the
- *      holder is itself dsh and is unhealthy)
- *   2. re-assert Tailscale Serve mapping so a pm2 restart brings the
- *      `https://<mac>.ts.net:PORT` URL back without operator action
- *   3. exec the pinned `@deepseek-ai/dsh` web command
- *
- * Idempotent and safe to run under pm2 `harness-web`.
+ * Same semantics as `scripts/start-web.sh`, which is what pm2 `harness-web`
+ * actually runs today.  This TS entry is the npm bin (`harness-web`).
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { hostname } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(new URL("..", import.meta.url).pathname, "..");
-const DSH_BIN = join(ROOT, "node_modules", ".bin", "dsh");
+import { httpStatusIsUp } from "../shared/http-up.ts";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const DSH_SH = join(ROOT, "scripts", "dsh.sh");
 const HOST = process.env.DSH_WEB_HOST ?? "127.0.0.1";
 const PORT = process.env.DSH_WEB_PORT ?? "3080";
 const TAILNET_HOST = process.env.HARNESS_TAILNET_HOST ?? "macbook.boa-roygbiv.ts.net";
 const TAILNET_IPV4 = process.env.HARNESS_TAILNET_IPV4 ?? "100.113.106.39";
-const SERVE_TAILSCALE = join(ROOT, "src", "web", "serve-tailscale.ts");
+const SERVE_TAILSCALE = join(ROOT, "scripts", "serve-tailscale.sh");
 
 function log(line: string): void {
   process.stderr.write(`harness-web: ${line}\n`);
 }
 
 async function readCommand(pid: number): Promise<string | null> {
-  return new Promise((resolve) => {
+  return new Promise((resolvePromise) => {
     const child = spawn("/bin/ps", ["-o", "command=", "-p", String(pid)], { stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     child.stdout.on("data", (chunk: Buffer) => {
       out += chunk.toString("utf8");
     });
-    child.on("error", () => resolve(null));
+    child.on("error", () => resolvePromise(null));
     child.on("exit", () => {
       const trimmed = out.trim();
-      resolve(trimmed.length > 0 ? trimmed : null);
+      resolvePromise(trimmed.length > 0 ? trimmed : null);
     });
   });
 }
 
 async function holderOnPort(port: string): Promise<number | null> {
-  return new Promise((resolve) => {
+  return new Promise((resolvePromise) => {
     const child = spawn("/usr/sbin/lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
       stdio: ["ignore", "pipe", "ignore"],
     });
@@ -52,21 +48,28 @@ async function holderOnPort(port: string): Promise<number | null> {
     child.stdout.on("data", (chunk: Buffer) => {
       out += chunk.toString("utf8");
     });
-    child.on("error", () => resolve(null));
+    child.on("error", () => resolvePromise(null));
     child.on("exit", () => {
       const trimmed = out.trim();
-      resolve(trimmed.length > 0 ? Number(trimmed.split(/\s+/)[0]) : null);
+      resolvePromise(trimmed.length > 0 ? Number(trimmed.split(/\s+/)[0]) : null);
     });
   });
 }
 
 async function probe(url: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const child = spawn("/usr/bin/curl", ["-sf", "-o", "/dev/null", "--max-time", "8", url], {
-      stdio: "ignore",
+  return new Promise((resolvePromise) => {
+    const child = spawn("/usr/bin/curl", ["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "8", url], {
+      stdio: ["ignore", "pipe", "ignore"],
     });
-    child.on("error", () => resolve(false));
-    child.on("exit", (code) => resolve(code === 0));
+    let out = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      out += chunk.toString("utf8");
+    });
+    child.on("error", () => resolvePromise(false));
+    child.on("exit", () => {
+      const code = Number.parseInt(out.trim(), 10);
+      resolvePromise(httpStatusIsUp(code));
+    });
   });
 }
 
@@ -101,33 +104,28 @@ async function reclaimPort(port: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  if (!existsSync(DSH_BIN)) {
-    log(`missing ${DSH_BIN} — run \`npm ci\` in ${ROOT} (never \`npx\`)`);
+  if (!existsSync(DSH_SH)) {
+    log(`missing ${DSH_SH}`);
     process.exit(127);
   }
 
   await reclaimPort(PORT);
 
   if (existsSync(SERVE_TAILSCALE)) {
-    // Re-assert Tailscale Serve before exec so a pm2 restart brings the
-    // tailnet URL back.  Failure is non-fatal (web still binds loopback).
-    try {
-      await new Promise<void>((resolve) => {
-        const child = spawn("/opt/homebrew/bin/tsx", [SERVE_TAILSCALE], {
-          stdio: "inherit",
-          env: {
-            ...process.env,
-            DSH_WEB_PORT: PORT,
-            HARNESS_TAILNET_HOST: TAILNET_HOST,
-            HARNESS_TAILNET_IPV4: TAILNET_IPV4,
-          },
-        });
-        child.on("exit", () => resolve());
-        child.on("error", () => resolve());
+    await new Promise<void>((resolvePromise) => {
+      const child = spawn(SERVE_TAILSCALE, [], {
+        stdio: "inherit",
+        env: {
+          ...process.env,
+          DSH_WEB_PORT: PORT,
+          HARNESS_TAILNET_HOST: TAILNET_HOST,
+          HARNESS_TAILNET_IPV4: TAILNET_IPV4,
+          HARNESS_RUNTIME_ROOT: ROOT,
+        },
       });
-    } catch {
-      /* non-fatal */
-    }
+      child.on("exit", () => resolvePromise());
+      child.on("error", () => resolvePromise());
+    });
   }
 
   const args = [
@@ -155,8 +153,11 @@ async function main(): Promise<void> {
     `${TAILNET_IPV4}:${PORT}`,
   ];
 
-  log(`exec dsh web on ${HOST}:${PORT}`);
-  const child = spawn(DSH_BIN, args, { stdio: "inherit" });
+  log(`exec dsh.sh web on ${HOST}:${PORT}`);
+  const child = spawn(DSH_SH, args, {
+    stdio: "inherit",
+    env: { ...process.env, HARNESS_RUNTIME_ROOT: ROOT, DSH_HOME: process.env.DSH_HOME ?? `${process.env.HOME}/.dsh` },
+  });
   child.on("exit", (code) => process.exit(code ?? 0));
   process.on("SIGINT", () => child.kill("SIGINT"));
   process.on("SIGTERM", () => child.kill("SIGTERM"));

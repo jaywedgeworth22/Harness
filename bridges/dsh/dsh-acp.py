@@ -15,8 +15,8 @@ Headless dsh prints nothing until the final answer, so this bridge must
 (1) detach the child from ACP stdin, (2) stream heartbeats so Shellular
 leaves Thinking, and (3) kill the process group on timeout/cancel.
 
-Tracked copy: ai-fleet-coordinator/scripts/dsh-runtime/dsh-acp.py
-Live install: ~/apps/harness-runtime/dsh-acp.py
+Tracked copy: this file (canonical).  AFC `scripts/dsh-runtime/` is a fallback copy.
+Live install: ~/apps/harness-runtime/bridges/dsh/dsh-acp.py (root shim: dsh-acp.sh)
 """
 
 from __future__ import annotations
@@ -34,7 +34,9 @@ from pathlib import Path
 from typing import Any
 
 _RUNTIME_ROOT = Path(
-    os.environ.get("DSH_RUNTIME_ROOT", "/Users/jay/apps/dsh-runtime"),
+    os.environ.get("HARNESS_RUNTIME_ROOT")
+    or os.environ.get("DSH_RUNTIME_ROOT")
+    or os.path.expanduser("~/apps/harness-runtime"),
 )
 DSH_BIN = os.environ.get("DSH_BIN", str(_RUNTIME_ROOT / "node_modules/.bin/dsh"))
 DSH_HOME = os.environ.get("DSH_HOME", os.path.expanduser("~/.dsh"))

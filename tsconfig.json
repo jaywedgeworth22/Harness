@@ -20,6 +20,6 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src/**/*", "scripts/**/*", "bridges/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "include": ["src/**/*", "scripts/**/*.ts"],
+  "exclude": ["node_modules", "dist", "tests"]
 }

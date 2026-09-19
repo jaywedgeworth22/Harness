@@ -32,7 +32,10 @@ export { isStockDshCli } from "./mcp-patch.ts";
  * puts BotFleet mounts in session/new.mcpServers.  Stock dsh-acp rejects a
  * non-empty list, so wrapSpawn delivers the same stdio servers through
  * dsh-mcp-client (`dsh --patch`) and a stdio bridge that zeros the wire list. */
-export function dshSpawnArgs(): string[] {
+export function dshSpawnArgs(
+  _config?: { readonly cli?: string },
+  _turn?: { readonly integrations?: unknown },
+): string[] {
   return ["--profile", "acp"];
 }
 
@@ -195,7 +198,7 @@ export const dshSupport: AcpSupport = {
     needsNode: true,
   },
 
-  spawnArgs: dshSpawnArgs as AcpSupport["spawnArgs"],
+  spawnArgs: dshSpawnArgs,
   resumeMethod: "session/resume",
   selectModel: {
     configId: "model",
@@ -213,7 +216,10 @@ export const dshSupport: AcpSupport = {
       value: requested,
     });
     const confirmed = currentConfigValue(result, "reasoning_effort");
-    if (confirmed !== requested) {
+    // Only a reported mismatch means the setting did not take.  A reply that
+    // carries no option state (stock `dsh` answered `{}`) reports nothing to
+    // compare, and failing on that refused every effort-pinned turn (BotFleet #486).
+    if (confirmed !== undefined && confirmed !== requested) {
       throw new Error(
         `DeepSeek Harness did not switch reasoning effort to ${requested} (still ${String(confirmed ?? "unknown")})`,
       );
@@ -229,6 +235,7 @@ export const dshSupport: AcpSupport = {
     "MINIMAX_API_KEY",
     "DSH_HOME",
     "DSH_RUNTIME_ROOT",
+    "HARNESS_RUNTIME_ROOT",
     "DSH_PERMISSION_MODE",
   ],
 

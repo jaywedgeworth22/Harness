@@ -2,13 +2,9 @@
  * Shared engine contract types for Harness.
  *
  * These mirror the subset of `server/contracts.ts` from BotFleet that the
- * driver / bridge code in this repo needs.  The canonical definitions live in
- * BotFleet (the harness runtime); this file is a *type-level* re-export so
- * Harness's own code can typecheck in isolation.
- *
- * BotFleet's `wireHarnessContracts()` (called once at app boot) does the
- * runtime replacement via `setContracts()`.  Until that wire-up happens, the
- * types below are the source of truth and the runtime stubs throw.
+ * driver / bridge code in this repo needs.  The canonical runtime lives in
+ * BotFleet; this file is the type-level contract so Harness typechecks
+ * in isolation.  Keep the two lists in sync when adding a code.
  */
 
 export type EffortLevel = "none" | "low" | "medium" | "high" | "max";

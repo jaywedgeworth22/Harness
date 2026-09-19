@@ -41,9 +41,11 @@ logic only:
 BotFleet's `server/drivers/acp/dsh.ts` becomes a thin re-export seam:
 
 ```ts
-import { dshSupport, dshWrapSpawn, STATIC_DSH_MODELS } from "harness/dsh/acp/driver";
-export { dshSupport, dshWrapSpawn, STATIC_DSH_MODELS };
-// ... compose with createAcpDriver from local acp/core.ts
+import { dshSupport as harnessDshSupport } from "harness/dsh/acp";
+import { dshWrapSpawn } from "./dsh-mcp.ts";
+import { createAcpDriver } from "./core.ts";
+export const dshSupport = { ...harnessDshSupport, wrapSpawn: dshWrapSpawn };
+export const DshAgentDriver = createAcpDriver(dshSupport);
 ```
 
 BotFleet owns `createAcpDriver` and the JSON-RPC client.
