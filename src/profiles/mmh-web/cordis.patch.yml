@@ -1,0 +1,2 @@
+# Patch layer for the MiniMax harness (mmh-web) profile.
+# Same minimal scaffold as mmh-headless.  Edit cordis.patch.yml, not this file.

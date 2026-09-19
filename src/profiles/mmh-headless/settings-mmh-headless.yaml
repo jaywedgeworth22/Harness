@@ -1,0 +1,6 @@
+# Settings for the mmh-headless profile only (dsh --profile mmh-headless, the
+# path Shellular's MiniMax agent uses).
+#
+# MiniMax has no upstream CLI/sandbox today; the mmh-acp.py bridge reads
+# MINIMAX_API_KEY directly from the environment and calls the HTTP API.
+# Keep this file present so the cordis patch layer can reference it.

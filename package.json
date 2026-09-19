@@ -1,0 +1,52 @@
+{
+  "name": "harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Friendly adaptation of @deepseek-ai/dsh extended for DSH and MiniMax harness parity.",
+  "type": "module",
+  "bin": {
+    "harness-web": "./src/web/start-web.ts",
+    "harness-serve-tailscale": "./src/web/serve-tailscale.ts",
+    "harness-open": "./src/web/open-harness.ts",
+    "harness-ensure": "./src/web/ensure-web.ts",
+    "harness-install-dock": "./src/web/install-dock-app.ts",
+    "harness-sync-profiles": "./scripts/sync-profiles.ts"
+  },
+  "scripts": {
+    "sync": "tsx scripts/sync-profiles.ts",
+    "web": "tsx src/web/start-web.ts --no-open --host 127.0.0.1 --port 3080",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:ci-scope": "vitest run --typecheck"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.5-rc.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "exports": {
+    "./dsh/acp": {
+      "types": "./src/dsh/acp/driver.ts",
+      "default": "./src/dsh/acp/driver.ts"
+    },
+    "./dsh/bridge": {
+      "types": "./bridges/dsh/dsh-acp.py",
+      "default": "./bridges/dsh/dsh-acp.py"
+    },
+    "./mmh/bridge": {
+      "types": "./bridges/mmh/mmh-acp.py",
+      "default": "./bridges/mmh/mmh-acp.py"
+    },
+    "./shared/cordis-patch": {
+      "types": "./src/shared/cordis-patch.ts",
+      "default": "./src/shared/cordis-patch.ts"
+    }
+  }
+}

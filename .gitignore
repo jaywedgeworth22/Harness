@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Local-only
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Live install paths (operator-managed; never committed)
+live/
