@@ -18,6 +18,12 @@ export HARNESS_RUNTIME_ROOT="${HARNESS_RUNTIME_ROOT:-$ROOT}"
 HOST="${DSH_WEB_HOST:-127.0.0.1}"
 PORT="${DSH_WEB_PORT:-3080}"
 
+# Launch-URL capture: dsh web 0.1.5-rc.2+ mints a per-process token that
+# the Dock app's WKWebView must visit once to set a signed cookie.  We
+# capture that token via a small Node shim instead of --no-open suppressing
+# both the URL print and the browser open.
+LAUNCH_URL_FILE="${DSH_LAUNCH_URL_FILE:-$DSH_HOME/web-launch-url}"
+
 http_up() {
   local code
   code="$(/usr/bin/curl -s -o /dev/null -w '%{http_code}' --max-time 8 "$1" || true)"
@@ -60,7 +66,8 @@ if [[ -x "$ROOT/scripts/serve-tailscale.sh" ]]; then
   "$ROOT/scripts/serve-tailscale.sh" || true
 fi
 
-exec "$ROOT/scripts/dsh.sh" web --no-open --host "$HOST" --port "$PORT" \
+exec node "$ROOT/scripts/capture-launch-url.cjs" \
+  "$ROOT/scripts/dsh.sh" web --no-open --host "$HOST" --port "$PORT" \
   --trusted-host "127.0.0.1" \
   --trusted-host "127.0.0.1:${PORT}" \
   --trusted-host "localhost" \

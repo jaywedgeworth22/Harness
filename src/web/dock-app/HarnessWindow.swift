@@ -4,8 +4,35 @@ import WebKit
 /// Tiny WKWebView shell so the Dock icon owns a real window.
 /// Second Dock click focuses this window (GitHub.app pattern), instead of
 /// spawning another Chrome --app instance.
-private let harnessURLString =
-    ProcessInfo.processInfo.environment["DSH_WEB_URL"] ?? "http://127.0.0.1:3080/"
+///
+/// URL resolution order:
+///   1. `DSH_WEB_URL` env var — explicit override (also lets tests point at
+///      a non-local server).
+///   2. `~/.dsh/web-launch-url` — written by `scripts/capture-launch-url.cjs`
+///      on every dsh-web start.  Contains the per-process `?token=...` URL
+///      that mints the signed browser cookie.  Visiting it once mints the
+///      cookie; subsequent `/` requests use the cookie, not the launch
+///      token, so the cookie persists across dsh-web restarts (the signing
+///      secret at `$DSH_HOME/credentials` is reused).
+///   3. Bare `http://127.0.0.1:3080/` — last resort; gets 401 until the
+///      user runs `bash ~/apps/harness-runtime/scripts/start-web.sh`
+///      interactively (which prints the launch URL to stdout) and visits
+///      it once in any browser.
+private var harnessURLString: String {
+    if let envURL = ProcessInfo.processInfo.environment["DSH_WEB_URL"],
+       !envURL.isEmpty {
+        return envURL
+    }
+    let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+    let launchURLPath = (home as NSString).appendingPathComponent(".dsh/web-launch-url")
+    if let content = try? String(contentsOfFile: launchURLPath, encoding: .utf8) {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+    }
+    return "http://127.0.0.1:3080/"
+}
 
 private func pingHarness() -> Bool {
     guard let url = URL(string: harnessURLString) else { return false }
