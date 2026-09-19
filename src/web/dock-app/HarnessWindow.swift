@@ -34,6 +34,18 @@ private var harnessURLString: String {
     return "http://127.0.0.1:3080/"
 }
 
+/// Escape a Swift string into a JavaScript-safe single-quoted string literal.
+/// Used to embed the CSS payload inside a `<script>` bootstrap that WKWebView
+/// will execute at document start; we want the raw CSS to land in a JS string
+/// without `</script>`-style early termination or stray backtick issues.
+private func cssSwiftLiteral(_ s: String) -> String {
+    let escaped = s
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "`", with: "\\`")
+        .replacingOccurrences(of: "$", with: "\\$")
+    return "`" + escaped + "`"
+}
+
 private func pingHarness() -> Bool {
     guard let url = URL(string: harnessURLString) else { return false }
     // 8s: a 2s ping under CPU load false-negatives, then ensure-web.sh
@@ -99,6 +111,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        let userContent = WKUserContentController()
+        // Hide the upstream DeepSeek branding header that dsh-web renders in the
+        // top-left (its own internal "deepseek HARNESS" logo + wordmark — this is
+        // separate from the macOS Dock app icon, which `install-dock-app.sh`
+        // already swaps to the MMH master).  Two layers because the brand block
+        // is rendered dynamically by @deepseek-ai/dsh-client-ui-dockkit, so a
+        // CSS rule alone misses elements that mount after `DOMContentLoaded`:
+        // the CSS hides class-tagged anchors/headers/SVGs on first paint, and
+        // the JS keeps hiding text-content matches as the DOM mutates.
+        let css = """
+        a[class*="brand"], header [class*="brand"], header [class*="logo"],
+        aside [class*="brand"], aside [class*="logo"],
+        nav [class*="brand"], nav [class*="logo"],
+        [class*="brand"] svg, [class*="logo"] svg {
+          display: none !important;
+          visibility: hidden !important;
+          width: 0 !important; height: 0 !important;
+          margin: 0 !important; padding: 0 !important;
+          overflow: hidden !important;
+        }
+        """
+        // WKUserContentController exposes only `addUserScript`; we wrap the CSS
+        // in a tiny bootstrap that injects a `<style>` element at document
+        // start, so the CSS lands before any user-painted elements.
+        let cssBootstrap = """
+        (function () {
+          var s = document.createElement('style');
+          s.textContent = \(cssSwiftLiteral(css));
+          (document.head || document.documentElement).appendChild(s);
+        })();
+        """
+        let cssScript = WKUserScript(source: cssBootstrap, injectionTime: WKUserScriptInjectionTime.atDocumentStart, forMainFrameOnly: true)
+        userContent.addUserScript(cssScript)
+        let brandHideScript = """
+        (function () {
+          const text = (s) => (s || '').toString();
+          const isBrandCandidate = (el) => {
+            if (!el || !el.tagName) return false;
+            const tag = el.tagName.toUpperCase();
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'INPUT' || tag === 'TEXTAREA') return false;
+            // Anchor nodes that wrap a small SVG logo + a "deepseek HARNESS"
+            // wordmark are the brand; a session link with hundreds of children
+            // is not.  Bound by child count + visible bounding box so we never
+            // nuke the sidebar session list or the chat composer.
+            if (el.children.length > 12) return false;
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return false;
+            if (rect.width > 320 || rect.height > 64) return false;
+            const t = text(el.textContent || '').trim().toLowerCase();
+            return t === 'deepseek' || t === 'deepseek harness' || t === 'harness';
+          };
+          const hide = () => {
+            document.querySelectorAll('a, div, span, header, aside, nav').forEach((el) => {
+              if (isBrandCandidate(el)) el.style.setProperty('display', 'none', 'important');
+            });
+            // Also drop the document title if it still says DeepSeek.
+            if (/deepseek/i.test(document.title || '')) document.title = 'Harness';
+          };
+          hide();
+          const mo = new MutationObserver(() => hide());
+          mo.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+          window.addEventListener('hashchange', hide);
+          window.addEventListener('popstate', hide);
+        })();
+        """
+        userContent.addUserScript(WKUserScript(source: brandHideScript, injectionTime: WKUserScriptInjectionTime.atDocumentEnd, forMainFrameOnly: true))
+        config.userContentController = userContent
         webView = WKWebView(frame: window.contentView?.bounds ?? .zero, configuration: config)
         webView.autoresizingMask = [.width, .height]
         webView.navigationDelegate = self
