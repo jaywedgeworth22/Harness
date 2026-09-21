@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   STATIC_DSH_MODELS,
   DSH_MINIMUM_ACP_VERSION,
+  DSH_PROVIDER_ID,
+  DSH_MINIMAX_PROVIDER_ID,
   classifyDshError,
   dshModelIdFromOptionValue,
   dshModelOptionValue,
+  dshProviderForModel,
   dshSpawnArgs,
   dshSupport,
   dshVersionCompatibilityReason,
@@ -19,8 +22,19 @@ describe("dshSpawnArgs", () => {
 
 describe("model option round-trip", () => {
   it("encodes and decodes a catalog id", () => {
+    expect(dshProviderForModel("deepseek-v4-flash")).toBe(DSH_PROVIDER_ID);
     const value = dshModelOptionValue("deepseek-v4-flash");
+    expect(value).toBe('["deepseek-official","deepseek-v4-flash"]');
     expect(dshModelIdFromOptionValue(value)).toBe("deepseek-v4-flash");
+
+    expect(dshProviderForModel("MiniMax-M3")).toBe(DSH_MINIMAX_PROVIDER_ID);
+    const mmValue = dshModelOptionValue("MiniMax-M3");
+    expect(mmValue).toBe('["minimax","MiniMax-M3"]');
+    expect(dshModelIdFromOptionValue(mmValue)).toBe("MiniMax-M3");
+
+    const mm27Value = dshModelOptionValue("MiniMax-M2.7");
+    expect(mm27Value).toBe('["minimax","MiniMax-M2.7"]');
+    expect(dshModelIdFromOptionValue(mm27Value)).toBe("MiniMax-M2.7");
   });
 
   it("rejects a foreign provider tuple", () => {
