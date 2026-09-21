@@ -89,11 +89,20 @@ export function dshVersionCompatibilityReason(version: string, cli = "dsh"): str
 const DSH_EFFORT_LEVELS = ["none", "high", "max"] as const satisfies readonly EffortLevel[];
 
 export const DSH_PROVIDER_ID = "deepseek-official";
+export const DSH_MINIMAX_PROVIDER_ID = "minimax";
+
+/** Resolve the ACP provider namespace for a model exposed through DSH. */
+export function dshProviderForModel(model: string): string {
+  if (model.toLowerCase().startsWith("minimax")) {
+    return DSH_MINIMAX_PROVIDER_ID;
+  }
+  return DSH_PROVIDER_ID;
+}
 
 /** DSH deliberately makes model values opaque because one catalog may expose
  * the same model id through several providers. */
 export function dshModelOptionValue(model: string): string {
-  return JSON.stringify([DSH_PROVIDER_ID, model]);
+  return JSON.stringify([dshProviderForModel(model), model]);
 }
 
 export function dshModelIdFromOptionValue(value: unknown): string | null {
@@ -103,7 +112,7 @@ export function dshModelIdFromOptionValue(value: unknown): string | null {
     if (
       Array.isArray(decoded) &&
       decoded.length === 2 &&
-      decoded[0] === DSH_PROVIDER_ID &&
+      (decoded[0] === DSH_PROVIDER_ID || decoded[0] === DSH_MINIMAX_PROVIDER_ID) &&
       typeof decoded[1] === "string" &&
       decoded[1].length > 0
     ) {
