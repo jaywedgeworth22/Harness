@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Build ~/Applications/Harness.app (WKWebView shell around DeepSeek Harness web,
 # Dock running-dot) and pin it to the Dock.  Icon is a full-bleed 1:1 square,
-# sharp 90° corners.  Display name "Harness"; bundle id kept stable as
-# com.jays.dsh-harness-web so existing Dock pins and saved frames survive.
-# 2026-09-19: bundle id renamed to services.jays.harness.  Dock pin and saved
-# frames do NOT survive the rename — re-pin after install.
+# sharp 90° corners.  Display name "Harness"; bundle id history (newest first):
+#   2026-09-23 — com.simplewithus.harness.mac (consumer rebrand; ownership
+#                transferred to simplewithus.com).  Dock pin and saved frames
+#                do NOT survive the rename — re-pin after install.
+#   2026-09-19 — services.jays.harness (interim owner-personal id).
+#   earlier    — com.jays.dsh-harness-web.
 set -euo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
@@ -58,7 +60,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>Harness</string>
   <key>CFBundleExecutable</key><string>DeepSeekHarness</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>CFBundleIdentifier</key><string>services.jays.harness</string>
+  <key>CFBundleIdentifier</key><string>com.simplewithus.harness.mac</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>Harness</string>
   <key>CFBundlePackageType</key><string>APPL</string>

@@ -120,6 +120,10 @@ imports from `jaywedgeworth22/Harness` via the npm git dependency above.
 ai-fleet-coordinator registers the app (`HR`) and points pm2 `harness-web`
 at this live install.
 
+## Marketing page
+
+Marketing page: `harness.simplewithus.com` (TBD).
+
 **Never edit driver or bridge code in BotFleet.**  Edit it here, in
 `src/dsh/acp/` or `src/mmh/acp/`.  BotFleet and AFC consume via PR.
 
