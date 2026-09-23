@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build ~/Applications/Harness.app.  The production installer is
- * `scripts/install-dock-app.sh` (bundle id `services.jays.harness` so
+ * `scripts/install-dock-app.sh` (bundle id `com.simplewithus.harness.mac` so
  * existing Dock pins survive).  This TS entry execs that script.
  */
 import { spawn } from "node:child_process";

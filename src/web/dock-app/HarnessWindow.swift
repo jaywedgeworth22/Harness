@@ -105,7 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         window.title = "Harness"
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.setFrameAutosaveName("ServicesJaysHarnessMain")
+        window.setFrameAutosaveName("ComSimplewithusHarnessMacMain")
         window.tabbingMode = .disallowed
 
         let config = WKWebViewConfiguration()
@@ -133,6 +133,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         aside [class*="brand"] svg, nav [class*="brand"] svg,
         [class*="brand"] svg, [class*="logo"] svg {
           display: none !important;
+        }
+        /* Strip the empty-state hero whale (HeroFish in
+           @deepseek-ai/dsh-client-ui-conversation/skeleton/EmptyHero).  The
+           hero headline ("Into the Unknown" + preview badge) is kept; only
+           the 34px SVG glyph and its hover-swim hitbox are removed. */
+        [class*="_fishHitbox"], [class*="_fish"]:not([class*="brandMark"]):not([class*="railMark"]) {
+          display: none !important;
+        }
+        /* Tighten the sidebar top-left header now that the upstream whale is
+           gone: collapse the brandMark wrapper (its only content was the
+           hidden SVG), collapse the brandIdentity gap (single remaining
+           child), and zero out the DS chip's right margin so the [MM][DS]
+           HARNESS row sits flush.  Class hashes (`hHd-Xa_*`,
+           `pXSMma_*`) are CSS-module scoped; match by suffix so the rule
+           survives an upstream re-hash. */
+        [class*="_brandMark"] {
+          display: none !important;
+        }
+        [class*="_brandIdentity"] {
+          gap: 0 !important;
+        }
+        [data-harness-ds] {
+          margin-right: 4px !important;
         }
         /* Make sure section headings in dropdowns use the brand case. */
         [class*="group-label"], [class*="vendor"], [class*="section-label"] {
