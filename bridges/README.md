@@ -3,8 +3,8 @@
 The stdio JSON-RPC bridges that let Shellular, ACP callers, and other agents
 spawn a harness session over a single child process.  Each bridge is a thin
 Python script: read JSON-RPC frames from stdin, fork-and-exec the harness
-binary (or, for MMH, call the HTTP API directly), write ACP-shaped frames to
-stdout.
+binary (`dsh --profile …`), write ACP-shaped frames to stdout.  Both DSH and
+MMH now spawn `dsh`; MMH pins the MiniMax LLM via the `mmh-headless` profile.
 
 ## Why Python
 
@@ -13,8 +13,9 @@ fixes (DEVNULL stdin, process-group kill, heartbeats) earned through real
 failures documented in
 `ai-fleet-coordinator/docs/rollouts/2026-08-23-shellular-deepseek-thinking-fix.md`
 and follow-ups.  Porting it to TypeScript is a coin-flip on whether every fix
-comes across correctly.  The MMH bridge (`mmh/mmh-acp.py`) is greenfield but
-still a stdio JSON-RPC shim, which Python's stdlib does without a build dep.
+comes across correctly.  The MMH bridge (`mmh/mmh-acp.py`) was once an HTTP chat/completions adapter;
+it now mirrors `dsh-acp.py` and spawns `dsh --profile mmh-headless` so Shellular
+MiniMax gets the same local tools as DeepSeek.
 
 If you need a new bridge: write it in Python, stdlib-only, and put it in
 `bridges/<name>/`.  The `bin` entry in `package.json` does not list bridge
@@ -29,7 +30,7 @@ bridges/
 ├── dsh/
 │   └── dsh-acp.py        # DeepSeek Harness → ACP
 ├── mmh/
-│   └── mmh-acp.py        # MiniMax Harness → ACP (HTTP adapter)
+│   └── mmh-acp.py        # MiniMax via Harness coding path → ACP (spawns dsh)
 └── grok/
     └── grok-acp.py       # Grok Build leader-stdio → ACP (strip authMethods)
 ```
@@ -45,8 +46,8 @@ Bridges never read agent credentials.  Auth comes from:
 
 - The process environment (`DEEPSEEK_API_KEY` for DSH, `MINIMAX_API_KEY` for MMH).
 - `~/.dsh/.credentials.yaml` for DSH (the harness's own credential store).
-- `~/.secrets/global-api-keys` for MMH (the names-only fleet file, looked
-  up by `MMH_API_KEY_NAME`).
+- `~/.dsh/.credentials.yaml` / `~/.secrets/global-api-keys` for MMH
+  (`MINIMAX_API_KEY`, looked up by `MMH_API_KEY_NAME`).
 
 The Shellular `agents.json` entry for each harness sets the env vars via the
 `env` block; the agent-facing config never holds a secret value.

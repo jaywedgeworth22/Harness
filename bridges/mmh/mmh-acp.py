@@ -1,41 +1,43 @@
 #!/usr/bin/env python3
-"""ACP stdio bridge for the MiniMax harness (Shellular spawn).
+"""ACP stdio bridge for MiniMax via Harness coding path (Shellular spawn).
 
-Stdout is JSON-RPC only.  MiniMax has no upstream CLI / ACP / sandbox today,
-so this bridge talks directly to the MM HTTP API
-(`https://api.minimax.io/v1/chat/completions`) and synthesizes ACP frames
-around the streamed response.  Model selection comes from MMH_MODEL env or
-defaults to `MiniMax-M2.7-highspeed` (the harness's utility model — fast,
-short, no 1M-context flagship needed for phone replies).
+Stdout is JSON-RPC only.  Drives `dsh --profile <profile>` with MiniMax as
+the LLM (same cordis tool loop as DeepSeek / dsh-acp.py).  Default profile
+is `mmh-headless` — a full `@deepseek-ai/dsh-headless` stack with
+`agent-default-model.provider: minimax`.  Override via MMH_PROFILE /
+DSH_PROFILE env.
 
-Auth comes from the process env (`MINIMAX_API_KEY`) or
-~/.secrets/global-api-keys (the names-only fleet file the harness reads) —
-never from agents.json.  The Shellular `minimax` id sets MMH_API_KEY_NAME
-to a key name; this bridge reads only that name, never the value.
+This is intentionally NOT the old HTTP-only chat/completions adapter.  That
+path had no local tools and dropped image attachments, so Shellular MiniMax
+behaved like the MiniMax chat web app.  Coding parity with DeepSeek means
+spawning Harness (dsh) with MiniMax as the model.
 
-Phone clients cannot answer MM interactive approval prompts (the MM API
-itself doesn't expose any — it has no permission model), so there is no
-approval layer.  The bridge still (1) detaches the request loop from ACP
-stdin, (2) streams heartbeats so Shellular leaves Thinking, and (3) bounds
-the wall clock at MMH_ACP_TIMEOUT_SEC (default 900s).
+Auth: process env `MINIMAX_API_KEY`, else `~/.dsh/.credentials.yaml`, else
+`~/.secrets/global-api-keys` looked up by MMH_API_KEY_NAME — never from
+agents.json.
+
+Phone clients cannot answer interactive approvals.  Default
+DSH_PERMISSION_MODE is danger-full-access (approval: never).
 
 ACP wire contract (must match Shellular / @agentclientprotocol, same as
-bridges/dsh/dsh-acp.py):
+bridges/dsh/dsh-acp.py — do not regress to BotFleet content.delta / turn.*):
   - notifications: method `session/update` with
     `sessionUpdate: agent_message_chunk | agent_thought_chunk`
-  - prompt result: `stopReason: end_turn` (snake_case ACP StopReason)
-  - NEVER emit BotFleet-shaped `content.delta` / `turn.*` — Shellular
-    ignores those, which produced empty successful end_turns after thinking.
+  - prompt result: `stopReason: endTurn`
+  - image ACP blocks are materialized to files under the session cwd and
+    the paths are appended to the text task so the coding agent can open them
 
 Tracked copy: bridges/mmh/mmh-acp.py
-Live install: ~/apps/harness-runtime/bridges/mmh/mmh-acp.py
+Live install: ~/apps/harness-runtime/bridges/mmh/mmh-acp.py (root shim: mmh-acp.sh)
 """
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -43,76 +45,120 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-DEFAULT_MODEL = os.environ.get("MMH_MODEL", "MiniMax-M2.7-highspeed")
-DEFAULT_BASE_URL = os.environ.get("MMH_BASE_URL", "https://api.minimax.io/v1")
-DEFAULT_TIMEOUT_SEC = int(os.environ.get("MMH_ACP_TIMEOUT_SEC", "900"))
-DEFAULT_HEARTBEAT_SEC = float(os.environ.get("MMH_ACP_HEARTBEAT_SEC", "5"))
+_RUNTIME_ROOT = Path(
+    os.environ.get("HARNESS_RUNTIME_ROOT")
+    or os.environ.get("DSH_RUNTIME_ROOT")
+    or os.path.expanduser("~/apps/harness-runtime"),
+)
+DSH_BIN = os.environ.get("DSH_BIN", str(_RUNTIME_ROOT / "node_modules/.bin/dsh"))
+DSH_HOME = os.environ.get("DSH_HOME", os.path.expanduser("~/.dsh"))
+# Prefer MMH_PROFILE; fall back to DSH_PROFILE for shared wrappers.
+DSH_PROFILE = os.environ.get("MMH_PROFILE") or os.environ.get("DSH_PROFILE", "mmh-headless")
+DEFAULT_TIMEOUT_SEC = int(
+    os.environ.get("MMH_ACP_TIMEOUT_SEC")
+    or os.environ.get("DSH_ACP_TIMEOUT_SEC", "900")
+)
+DEFAULT_HEARTBEAT_SEC = float(
+    os.environ.get("MMH_ACP_HEARTBEAT_SEC")
+    or os.environ.get("DSH_ACP_HEARTBEAT_SEC", "5")
+)
+DEFAULT_PERMISSION_MODE = os.environ.get("DSH_PERMISSION_MODE", "danger-full-access")
 MMH_API_KEY_NAME = os.environ.get("MMH_API_KEY_NAME", "MINIMAX_API_KEY")
-MMH_PROFILE = os.environ.get("MMH_PROFILE", "mmh-headless")
 
 JsonDict = dict[str, Any]
 
 
-def _load_key_from_global_secrets() -> None:
-    """Read ~/.secrets/global-api-keys for the single MMH_API_KEY_NAME we were
-    told to look up.  Never reads anything else from the file; the rest of
-    that file is fleet-managed and out of scope for this bridge."""
-    target = os.environ.get(MMH_API_KEY_NAME)
-    if target:
+def _load_minimax_key() -> None:
+    """Ensure MINIMAX_API_KEY (or MMH_API_KEY_NAME) is in the process env.
+
+    Order: already-set env → ~/.dsh/.credentials.yaml → ~/.secrets/global-api-keys.
+    Never prints or logs the value.
+    """
+    target = MMH_API_KEY_NAME
+    if os.environ.get(target) or os.environ.get("MINIMAX_API_KEY"):
+        if not os.environ.get("MINIMAX_API_KEY") and os.environ.get(target):
+            os.environ["MINIMAX_API_KEY"] = os.environ[target]
         return
+
+    cred = Path.home() / ".dsh" / ".credentials.yaml"
+    if cred.is_file():
+        try:
+            raw_text = cred.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            raw_text = ""
+        for raw in raw_text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "MINIMAX_API_KEY" not in line and target not in line:
+                continue
+            if ":" in line:
+                _k, val = line.split(":", 1)
+            elif "=" in line:
+                _k, val = line.split("=", 1)
+            else:
+                continue
+            val = val.strip().strip("'").strip('"')
+            if val:
+                os.environ["MINIMAX_API_KEY"] = val
+                os.environ[target] = val
+                return
+
     secrets = Path.home() / ".secrets" / "global-api-keys"
     if not secrets.is_file():
         return
     try:
-        text = secrets.read_text(encoding="utf-8", errors="replace")
+        raw_text = secrets.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return
-    for raw in text.splitlines():
+    for raw in raw_text.splitlines():
         line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
+        if not line or line.startswith("#") or "=" not in line:
             continue
         name, _, val = line.partition("=")
-        if name.strip() != MMH_API_KEY_NAME:
+        if name.strip() not in {target, "MINIMAX_API_KEY"}:
             continue
         val = val.strip().strip("'").strip('"')
         if val:
-            os.environ[MMH_API_KEY_NAME] = val
+            os.environ["MINIMAX_API_KEY"] = val
+            os.environ[target] = val
             return
 
 
-_load_key_from_global_secrets()
+_load_minimax_key()
 
 out_lock = threading.Lock()
 sessions: dict[str, JsonDict] = {}
-heartbeat_timers: dict[str, threading.Timer] = {}
-heartbeat_lock = threading.Lock()
-prompt_cancel: dict[str, threading.Event] = {}
-prompt_lock = threading.Lock()
+active_procs: dict[str, subprocess.Popen[str]] = {}
+active_lock = threading.Lock()
 
 
-def emit(obj: JsonDict) -> None:
-    line = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+def write(payload: JsonDict) -> None:
+    raw = json.dumps(payload, ensure_ascii=True, separators=(",", ":")) + "\n"
     with out_lock:
-        sys.stdout.write(line + "\n")
+        sys.stdout.write(raw)
         sys.stdout.flush()
 
 
-def reply(req_id: Any, result: Any) -> None:
-    emit({"jsonrpc": "2.0", "id": req_id, "result": result})
+def reply(req_id: Any, result: JsonDict) -> None:
+    write({"jsonrpc": "2.0", "id": req_id, "result": result})
 
 
-def reply_error(req_id: Any, code: int, message: str) -> None:
-    emit({"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}})
+def fail(req_id: Any, message: str, code: int = -32000) -> None:
+    write(
+        {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {"code": code, "message": message},
+        }
+    )
 
 
 def notify(method: str, params: JsonDict) -> None:
-    emit({"jsonrpc": "2.0", "method": method, "params": params})
+    write({"jsonrpc": "2.0", "method": method, "params": params})
 
 
 def emit_text(session_id: str, text: str) -> None:
-    """Visible assistant bytes — Shellular only renders agent_message_chunk."""
     if not text:
         return
     notify(
@@ -128,7 +174,6 @@ def emit_text(session_id: str, text: str) -> None:
 
 
 def emit_thought(session_id: str, text: str) -> None:
-    """Thinking / heartbeat — Shellular renders agent_thought_chunk."""
     if not text:
         return
     notify(
@@ -143,36 +188,87 @@ def emit_thought(session_id: str, text: str) -> None:
     )
 
 
-def start_heartbeat(session_id: str) -> None:
-    """Shellular leaves Thinking only on streamed ACP updates.  MM is HTTP,
-    so we synthesize thought chunks at a fixed cadence until real tokens."""
+def _materialize_image_block(item: dict[str, Any], dest_dir: Path, index: int) -> str | None:
+    """Write one ACP image block to dest_dir; return absolute path or None."""
+    import base64
 
-    def beat() -> None:
-        with heartbeat_lock:
-            if session_id not in heartbeat_timers:
-                return
-        elapsed = time.monotonic() - sessions.get(session_id, {}).get(
-            "started_at", time.monotonic()
+    mime = ""
+    data_b64 = ""
+    if item.get("type") == "image":
+        mime = str(item.get("mimeType") or item.get("mediaType") or "image/png")
+        data_b64 = str(item.get("data") or "")
+    elif item.get("type") == "resource" and isinstance(item.get("resource"), dict):
+        res = item["resource"]
+        mime = str(res.get("mimeType") or "")
+        data_b64 = str(res.get("blob") or "")
+        if not mime.startswith("image/"):
+            return None
+    else:
+        return None
+    if not data_b64:
+        return None
+    # Strip data-URL prefix if present
+    if "," in data_b64 and data_b64.strip().lower().startswith("data:"):
+        data_b64 = data_b64.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(data_b64, validate=False)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    ext = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }.get(mime.lower(), ".bin")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = dest_dir / f"attachment-{index:02d}{ext}"
+    path.write_bytes(raw)
+    return str(path.resolve())
+
+
+def extract_prompt_text(prompt: Any, cwd: str | None = None) -> str:
+    """Flatten ACP prompt blocks to a text task for headless dsh.
+
+    Image / resource image blocks are written under
+    `<cwd>/.shellular-attachments/` (or /tmp) and their paths are appended
+    so the coding agent can open them with local tools.
+    """
+    parts: list[str] = []
+    image_paths: list[str] = []
+    if isinstance(prompt, str):
+        return prompt.strip()
+    if not isinstance(prompt, list):
+        return ""
+    base = Path(cwd) if cwd and os.path.isdir(cwd) else Path("/tmp")
+    dest = base / ".shellular-attachments"
+    img_i = 0
+    for item in prompt:
+        if isinstance(item, str):
+            parts.append(item)
+            continue
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text")
+        if text is None and isinstance(item.get("content"), str):
+            text = item.get("content")
+        if text:
+            parts.append(str(text))
+        path = _materialize_image_block(item, dest, img_i)
+        if path:
+            image_paths.append(path)
+            img_i += 1
+    body = "\n".join(parts).strip()
+    if image_paths:
+        note = (
+            "Attached image file(s) saved on the local Mac "
+            "(open with read/bash tools):\n"
+            + "\n".join(f"- {p}" for p in image_paths)
         )
-        emit_thought(session_id, f"[working… {int(elapsed)}s]\n")
-        with heartbeat_lock:
-            t = threading.Timer(DEFAULT_HEARTBEAT_SEC, beat)
-            t.daemon = True
-            heartbeat_timers[session_id] = t
-            t.start()
-
-    with heartbeat_lock:
-        t = threading.Timer(DEFAULT_HEARTBEAT_SEC, beat)
-        t.daemon = True
-        heartbeat_timers[session_id] = t
-        t.start()
-
-
-def stop_heartbeat(session_id: str) -> None:
-    with heartbeat_lock:
-        t = heartbeat_timers.pop(session_id, None)
-    if t is not None:
-        t.cancel()
+        body = f"{body}\n\n{note}" if body else note
+    return body.strip()
 
 
 def modes_block() -> JsonDict:
@@ -184,222 +280,207 @@ def modes_block() -> JsonDict:
     }
 
 
-def handle_initialize(req_id: Any, params: JsonDict) -> None:
-    version = params.get("protocolVersion", 1)
-    reply(
-        req_id,
-        {
-            "protocolVersion": version,
-            "agentInfo": {
-                "name": "minimax-harness",
-                "version": "0.2.0",
-                "profile": MMH_PROFILE,
-                "model": DEFAULT_MODEL,
-            },
-            "agentCapabilities": {
-                "loadSession": False,
-                "promptCapabilities": {
-                    "image": False,
-                    "audio": False,
-                    "embeddedContext": True,
-                },
-                "mcpCapabilities": {"http": False, "sse": False},
-            },
-            "authMethods": [],
-        },
-    )
-
-
-def handle_authenticate(req_id: Any, _params: JsonDict) -> None:
-    reply(req_id, {})
-
-
-def handle_session_new(req_id: Any, params: JsonDict) -> None:
-    session_id = "session-" + uuid.uuid4().hex[:12]
-    cwd = params.get("cwd") or os.getcwd()
-    sessions[session_id] = {
-        "cwd": cwd,
-        "started_at": time.monotonic(),
-        "history": [],
-    }
-    reply(req_id, {"sessionId": session_id, "modes": modes_block()})
-
-
-def handle_session_cancel(req_id: Any, params: JsonDict) -> None:
-    session_id = str(params.get("sessionId") or "")
-    with prompt_lock:
-        ev = prompt_cancel.get(session_id)
-    cancelled = False
-    if ev is not None:
-        ev.set()
-        cancelled = True
-    stop_heartbeat(session_id)
-    if req_id is not None:
-        reply(req_id, {"cancelled": cancelled})
-
-
-def _run_prompt(req_id: Any, params: JsonDict) -> None:
-    """Stream one MM HTTP chat-completions request into ACP session/update
-    chunks.  Runs on a worker thread so stdin can still accept cancel."""
-    import urllib.error
-    import urllib.request
-
-    session_id = params.get("sessionId") or ""
-    session = sessions.get(session_id)
-    if session is None:
-        reply_error(req_id, -32000, f"unknown session: {session_id}")
+def _drain_stderr(proc: subprocess.Popen[str], session_id: str) -> None:
+    stderr = proc.stderr
+    if stderr is None:
         return
-
-    api_key = os.environ.get(MMH_API_KEY_NAME)
-    if not api_key:
-        reply_error(req_id, -32000, f"no {MMH_API_KEY_NAME} in env")
-        return
-
-    prompt_text = ""
-    for block in params.get("prompt", []):
-        if isinstance(block, dict) and block.get("type") == "text":
-            prompt_text += block.get("text", "")
-        elif isinstance(block, dict) and isinstance(block.get("text"), str):
-            prompt_text += block["text"]
-        elif isinstance(block, str):
-            prompt_text += block
-
-    if not prompt_text.strip():
-        reply_error(req_id, -32000, "empty prompt")
-        return
-
-    cancel = threading.Event()
-    with prompt_lock:
-        prompt_cancel[session_id] = cancel
-
-    session["history"].append({"role": "user", "content": prompt_text})
-    session["started_at"] = time.monotonic()
-    body = {
-        "model": DEFAULT_MODEL,
-        "messages": session["history"],
-        "stream": True,
-        "stream_options": {"include_usage": True},
-        "reasoning_split": True,
-    }
-    req = urllib.request.Request(
-        f"{DEFAULT_BASE_URL.rstrip('/')}/chat/completions",
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-
-    start_heartbeat(session_id)
-    full_text = ""
-    full_reasoning = ""
-    timed_out = False
-    cancelled = False
-    http_error: str | None = None
     try:
-        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-        with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT_SEC) as resp:
-            for raw_line in resp:
-                if cancel.is_set():
-                    cancelled = True
-                    break
-                if time.monotonic() > deadline:
-                    timed_out = True
-                    break
-                line = raw_line.decode("utf-8", errors="replace").strip()
-                if not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]" or not data:
-                    continue
-                try:
-                    chunk = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
-                # MiniMax may put thinking in reasoning_content or thinking
-                reasoning = delta.get("reasoning_content") or delta.get("thinking")
-                content = delta.get("content")
-                if isinstance(reasoning, str) and reasoning:
-                    full_reasoning += reasoning
-                    emit_thought(session_id, reasoning)
-                if isinstance(content, str) and content:
-                    full_text += content
-                    emit_text(session_id, content)
-    except urllib.error.HTTPError as e:
-        http_error = f"HTTP {e.code}: {e.reason}"
+        for line in stderr:
+            stripped = line.strip()
+            if stripped:
+                emit_text(session_id, f"[stderr] {stripped}\n")
+    except (OSError, ValueError):
+        pass
+
+
+def _clear_active(session_id: str, proc: subprocess.Popen[str]) -> None:
+    with active_lock:
+        current = active_procs.get(session_id)
+        if current is proc:
+            active_procs.pop(session_id, None)
+
+
+def _close_pipe(stream: Any) -> None:
+    if stream is None:
+        return
+    try:
+        stream.close()
+    except (OSError, ValueError):
+        pass
+
+
+def _kill_proc_group(proc: subprocess.Popen[str]) -> None:
+    pid = proc.pid
+    if pid:
         try:
-            detail = e.read().decode("utf-8", errors="replace")[:500]
-            if detail:
-                http_error = f"{http_error} — {detail}"
-        except Exception:  # noqa: BLE001
-            pass
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        http_error = str(e)
-    finally:
-        stop_heartbeat(session_id)
-        with prompt_lock:
-            prompt_cancel.pop(session_id, None)
+            os.killpg(pid, signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+        try:
+            proc.wait(timeout=3)
+        except (subprocess.TimeoutExpired, OSError):
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+    _close_pipe(proc.stdout)
+    _close_pipe(proc.stderr)
 
-    if http_error is not None:
-        emit_text(session_id, f"[mmh-acp] {http_error}\n")
-        reply_error(req_id, -32000, http_error)
-        return
 
-    if cancelled:
-        reply(req_id, {"stopReason": "cancelled"})
-        return
+def cancel_session(session_id: str) -> bool:
+    with active_lock:
+        proc = active_procs.get(session_id)
+    if proc is None:
+        return False
+    _kill_proc_group(proc)
+    return True
 
-    if timed_out:
-        emit_text(
-            session_id,
-            f"\n[mmh-acp] Timed out after {DEFAULT_TIMEOUT_SEC}s.\n",
+
+def build_dsh_cmd(session_id: str, prompt_text: str) -> list[str]:
+    cmd = [DSH_BIN, "--profile", DSH_PROFILE]
+    if session_id.startswith("session-"):
+        cmd.extend(["--resume", session_id])
+    cmd.append(prompt_text)
+    return cmd
+
+
+def handle_prompt(req_id: Any, session_id: str, prompt_text: str, cwd: str) -> None:
+    env = os.environ.copy()
+    env["DSH_HOME"] = DSH_HOME
+    env.setdefault("DSH_PERMISSION_MODE", DEFAULT_PERMISSION_MODE)
+    env["DSH_SESSION_ID"] = session_id
+    env["DSH_RESUME"] = session_id
+    cmd = build_dsh_cmd(session_id, prompt_text)
+    workdir = cwd if os.path.isdir(cwd) else None
+    proc: subprocess.Popen[str] | None = None
+    timed_out = False
+    replied = False
+    stdout_done = threading.Event()
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=workdir,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            start_new_session=True,
         )
-        reply(req_id, {"stopReason": "max_tokens"})
-        return
+        with active_lock:
+            active_procs[session_id] = proc
 
-    # Harden: never treat a blank body as a normal successful end_turn.
-    # Shellular renders only agent_message_chunk; an empty successful turn
-    # looks like "thinking then blank reply".
-    visible = full_text.strip()
-    if not visible:
-        if full_reasoning.strip():
-            # Model returned only reasoning (reasoning_split quirk) — surface it.
-            emit_text(session_id, full_reasoning)
-            visible = full_reasoning.strip()
-        else:
-            msg = (
-                "[mmh-acp] empty response from MiniMax API "
-                "(no content or reasoning_content in stream)"
+        def read_stdout() -> None:
+            try:
+                stdout = proc.stdout
+                if stdout is None:
+                    return
+                for line in stdout:
+                    emit_text(session_id, line)
+            except (OSError, ValueError):
+                pass
+            finally:
+                stdout_done.set()
+
+        stdout_thread = threading.Thread(target=read_stdout, daemon=True)
+        stdout_thread.start()
+        stderr_thread = threading.Thread(
+            target=_drain_stderr,
+            args=(proc, session_id),
+            daemon=True,
+        )
+        stderr_thread.start()
+
+        started = time.monotonic()
+        heartbeat = max(DEFAULT_HEARTBEAT_SEC, 0.5)
+        while not stdout_done.wait(timeout=heartbeat):
+            elapsed = int(time.monotonic() - started)
+            if elapsed >= DEFAULT_TIMEOUT_SEC:
+                timed_out = True
+                emit_text(
+                    session_id,
+                    f"\n[mmh-acp] Timed out after {DEFAULT_TIMEOUT_SEC}s.\n",
+                )
+                _kill_proc_group(proc)
+                break
+            marker = f"[working… {elapsed}s]\n"
+            emit_thought(session_id, marker)
+
+        stdout_thread.join(timeout=2)
+        stderr_thread.join(timeout=2)
+        if proc.poll() is None:
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                _kill_proc_group(proc)
+        if timed_out:
+            pass
+        elif proc.returncode not in (0, None, -9, -15):
+            emit_text(
+                session_id,
+                f"dsh (mmh) exited with code {proc.returncode}\n",
             )
-            emit_text(session_id, msg + "\n")
-            reply_error(req_id, -32000, msg)
-            return
-
-    session["history"].append({"role": "assistant", "content": visible})
-    reply(req_id, {"stopReason": "end_turn"})
-
-
-def handle_session_prompt(req_id: Any, params: JsonDict) -> None:
-    thread = threading.Thread(
-        target=_run_prompt,
-        args=(req_id, params),
-        daemon=True,
-    )
-    thread.start()
+        reply(req_id, {"stopReason": "endTurn"})
+        replied = True
+    except Exception as exc:
+        emit_text(session_id, f"Execution error: {exc}\n")
+        if not replied:
+            reply(req_id, {"stopReason": "endTurn"})
+            replied = True
+    finally:
+        if proc is not None:
+            _clear_active(session_id, proc)
+        if not replied:
+            reply(req_id, {"stopReason": "endTurn"})
 
 
-HANDLERS = {
-    "initialize": handle_initialize,
-    "authenticate": handle_authenticate,
-    "session/new": handle_session_new,
-    "session/prompt": handle_session_prompt,
-    "session/cancel": handle_session_cancel,
-}
+def list_dsh_sessions() -> list[JsonDict]:
+    sess_root = Path(DSH_HOME) / "sessions"
+    if not sess_root.is_dir():
+        return []
+    items: list[JsonDict] = []
+    try:
+        for dir_entry in sess_root.iterdir():
+            if not dir_entry.is_dir() or dir_entry.name == "acp":
+                continue
+            raw_path = dir_entry.name.strip("-").replace("-", "/")
+            cwd = "/" + raw_path if raw_path else str(Path.home())
+            for sess_dir in dir_entry.iterdir():
+                if not sess_dir.is_dir():
+                    continue
+                sess_id = sess_dir.name
+                try:
+                    mtime = sess_dir.stat().st_mtime
+                    dt = datetime.datetime.fromtimestamp(
+                        mtime,
+                        tz=datetime.timezone.utc,
+                    ).isoformat()
+                except OSError:
+                    dt = None
+                repo_name = Path(cwd).name if Path(cwd).name else "DeepSeek"
+                display_title = f"MiniMax/{repo_name}: {sess_id.replace('session-', '')[:8]}"
+                items.append(
+                    {
+                        "sessionId": sess_id,
+                        "cwd": cwd,
+                        "title": display_title,
+                        "updatedAt": dt,
+                    }
+                )
+    except Exception:
+        pass
+    items.sort(key=lambda x: x.get("updatedAt") or "", reverse=True)
+    return items[:50]
 
 
-def serve() -> None:
+def main() -> None:
     for raw in sys.stdin:
         line = raw.strip()
         if not line:
@@ -410,20 +491,75 @@ def serve() -> None:
             continue
         method = req.get("method")
         req_id = req.get("id")
-        params = req.get("params") or {}
-        handler = HANDLERS.get(method)
-        if handler is None:
+        params = req.get("params") if isinstance(req.get("params"), dict) else {}
+
+        if method == "initialize":
+            version = params.get("protocolVersion", 1)
+            reply(
+                req_id,
+                {
+                    "protocolVersion": version,
+                    "agentCapabilities": {
+                        "loadSession": True,
+                        "promptCapabilities": {
+                            "image": True,
+                            "audio": False,
+                            "embeddedContext": True,
+                        },
+                        "sessionCapabilities": {
+                            "list": {},
+                        },
+                    },
+                    "agentInfo": {
+                        "name": "minimax-harness-acp",
+                        "version": "0.3.0",
+                        "profile": DSH_PROFILE,
+                    },
+                    "authMethods": [],
+                },
+            )
+        elif method == "authenticate":
+            reply(req_id, {})
+        elif method == "session/list":
+            reply(req_id, {"sessions": list_dsh_sessions()})
+        elif method == "session/new":
+            sess_id = str(uuid.uuid4())
+            cwd = params.get("cwd") if isinstance(params.get("cwd"), str) else os.getcwd()
+            sessions[sess_id] = {"cwd": cwd, "sessionId": sess_id}
+            reply(req_id, {"sessionId": sess_id, "modes": modes_block()})
+        elif method == "session/load":
+            sess_id = str(params.get("sessionId") or uuid.uuid4())
+            cwd = params.get("cwd") if isinstance(params.get("cwd"), str) else os.getcwd()
+            sessions[sess_id] = {"cwd": cwd, "sessionId": sess_id}
+            reply(req_id, {"sessionId": sess_id, "modes": modes_block()})
+        elif method == "session/prompt":
+            sess_id = str(params.get("sessionId") or "")
+            record = sessions.setdefault(sess_id, {"cwd": os.getcwd(), "sessionId": sess_id})
+            cwd = str(record.get("cwd") or os.getcwd())
+            text = extract_prompt_text(params.get("prompt"), cwd=cwd)
+            if not text:
+                fail(req_id, "empty prompt")
+                continue
+            target_session_id = str(record.get("sessionId") or sess_id)
+            thread = threading.Thread(
+                target=handle_prompt,
+                args=(req_id, target_session_id, text, cwd),
+                daemon=True,
+            )
+            thread.start()
+        elif method == "session/cancel":
+            sess_id = str(params.get("sessionId") or "")
+            cancelled = cancel_session(sess_id)
             if req_id is not None:
-                # ACP clients probe optional methods; empty result is fine.
-                reply(req_id, {})
-            continue
-        try:
-            handler(req_id, params)
-        except Exception as e:  # noqa: BLE001
-            if req_id is not None:
-                reply_error(req_id, -32603, f"{type(e).__name__}: {e}")
+                reply(req_id, {"cancelled": cancelled})
+        elif method == "ping":
+            reply(req_id, {})
+        elif req_id is not None:
+            reply(req_id, {})
 
 
 if __name__ == "__main__":
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    serve()
+    if "--version" in sys.argv:
+        print("mmh-acp 0.3.0 (dsh coding path)")
+        sys.exit(0)
+    main()

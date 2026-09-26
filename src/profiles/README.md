@@ -8,7 +8,7 @@ ship in this repo:
 |---|---|---|
 | `dsh-headless/` | `dsh-base` + `dsh-headless` | DeepSeek Harness headless (phone, Shellular spawn) |
 | `dsh-web/` | `dsh-base` + `dsh-web-app` | DeepSeek Harness web UI on `:3080` |
-| `mmh-headless/` | `dsh-base` | MiniMax Harness headless (phone, Shellular spawn) |
+| `mmh-headless/` | `dsh-base` + `dsh-headless` | MiniMax coding via Harness (phone; MiniMax LLM + local tools) |
 | `mmh-web/` | `dsh-base` + `dsh-web-app` | MiniMax Harness web UI on `:3081` (future) |
 
 ## Sync
