@@ -28,14 +28,16 @@ bridges/
 ├── README.md
 ├── dsh/
 │   └── dsh-acp.py        # DeepSeek Harness → ACP
-└── mmh/
-    └── mmh-acp.py        # MiniMax Harness → ACP (HTTP adapter)
+├── mmh/
+│   └── mmh-acp.py        # MiniMax Harness → ACP (HTTP adapter)
+└── grok/
+    └── grok-acp.py       # Grok Build leader-stdio → ACP (strip authMethods)
 ```
 
-The `dsh-acp.sh` and `mmh-acp.sh` shell wrappers live in `scripts/` and
-as root shims at the repo root (the live-install paths Shellular uses).
-They set the env vars each bridge reads and `exec` the Python under
-`/opt/homebrew/bin/python3`.
+The `dsh-acp.sh`, `mmh-acp.sh`, and `grok-acp.sh` shell wrappers live in
+`scripts/` and as root shims at the repo root (the live-install paths
+Shellular uses).  They set the env vars each bridge reads and `exec` the
+Python under `/opt/homebrew/bin/python3`.
 
 ## Auth
 
