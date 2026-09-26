@@ -32,6 +32,8 @@
   disabled: true
 - id: web
   disabled: true
+- id: web-fetch-http
+  disabled: true
 - id: llm-deepseek
   config:
     thinking: enabled
