@@ -1,6 +1,44 @@
-# Settings for the mmh-headless profile only (dsh --profile mmh-headless, the
-# path Shellular's MiniMax agent uses).
+# Settings for the mmh-headless profile only (dsh --profile mmh-headless).
+# Shellular MiniMax → mmh-acp.py → dsh --profile mmh-headless with MiniMax LLM.
 #
-# MiniMax has no upstream CLI/sandbox today; the mmh-acp.py bridge reads
-# MINIMAX_API_KEY directly from the environment and calls the HTTP API.
-# Keep this file present so the cordis patch layer can reference it.
+# Keep permission.defaultPreset: danger-full-access — the phone cannot answer
+# approval: ask prompts (same posture as settings-dsh-headless.yaml).
+permission:
+  defaultPreset: danger-full-access
+
+agent-default-model:
+  provider: minimax
+  model: MiniMax-M2.7-highspeed
+  reasoningEffort: low
+
+# MiniMax models ride the llm-pi-ai provider namespace inside @deepseek-ai/dsh.
+# apiKeyEnv must match MINIMAX_API_KEY (loaded by mmh-acp / credentials.yaml).
+llm-pi-ai:
+  providers:
+    {
+      minimax:
+        {
+          apiKeyEnv: MINIMAX_API_KEY,
+          models:
+            [
+              {
+                  id: MiniMax-M2.7,
+                  name: MiniMax-M2.7,
+                  contextWindow: 204800,
+                  maxTokens: 131072
+                },
+              {
+                  id: MiniMax-M2.7-highspeed,
+                  name: MiniMax-M2.7-highspeed,
+                  contextWindow: 204800,
+                  maxTokens: 131072
+                },
+              {
+                  id: MiniMax-M3,
+                  name: MiniMax-M3,
+                  contextWindow: 1000000,
+                  maxTokens: 128000
+                }
+            ]
+        }
+    }

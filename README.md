@@ -36,7 +36,7 @@ Rules" for the standing rule.
 ## What you get
 
 - **`dsh/`** — DSH harness: full `@deepseek-ai/dsh` CLI + ACP bridge + cordis patch layer.  Same surface as the prior `~/apps/dsh-runtime/` install, lifted into a versioned repo.
-- **`mmh/`** — MMH harness: a thin Python ACP bridge that wraps the MiniMax HTTP API (`api.minimax.io`) and synthesizes ACP frames around streamed chat-completions responses.  No upstream MM CLI / sandbox / plugins exist yet, so MMH today is a wire-level adapter.
+- **`mmh/`** — MMH harness: Shellular MiniMax rides the same `@deepseek-ai/dsh` coding stack as DSH, with MiniMax as the LLM (`mmh-headless` profile).  `bridges/mmh/mmh-acp.py` spawns `dsh --profile mmh-headless` (not a bare chat/completions HTTP call).
 - **`web/`** — TypeScript web UI scripts (the `start-web.sh`, `serve-tailscale.sh`, `open-harness.sh`, `ensure-web.sh`, `install-dock-app.sh` set, ported from bash to TS).
 - **`profiles/`** — Tracked cordis profile defaults.  Each profile is an independent cordis tree (bundles + empty entry list + patch layer).  Four canonical profiles ship in this repo: `dsh-headless`, `dsh-web`, `mmh-headless`, `mmh-web`.  Per-profile feature depth (plugins, tool allowlist, thinking effort, turn budgets, model selection) is the operator's lever.
 - **`bridges/`** — Python stdio JSON-RPC bridges for Shellular, ACP callers, and other agents.  Bridges stay Python intentionally — see `docs/decisions/0001-bridges-stay-python.md`.
@@ -129,7 +129,7 @@ Marketing page: `harness.simplewithus.com` (TBD).
 
 ## Why two harnesses
 
-The DeepSeek Harness is a real product today: a CLI, a web UI, an ACP bridge, an MCP server, a cordis plugin system, a sandbox, a permission model.  The MiniMax harness is a real product too — it has a chat-completions HTTP API, rate limits, balance endpoints, and a documented model catalog — but it does not (yet) have a CLI, a sandbox, a permission model, or a plugin system.  MMH in this repo is the wire-level adapter that lets MM ride the same UI shell and the same agent-facing ACP surface as DSH.  When MM ships upstream pieces (CLI, sandbox, plugins), the MMH adapter grows to match; until then, the HTTP adapter is the full implementation.
+The DeepSeek Harness is a real product today: a CLI, a web UI, an ACP bridge, an MCP server, a cordis plugin system, a sandbox, a permission model.  MiniMax ships the chat-completions HTTP API and model catalog; Harness runs MiniMax *as an LLM provider inside dsh* (same cordis tools / sandbox / permission model as DeepSeek).  Shellular's MiniMax agent therefore uses the coding path (`dsh --profile mmh-headless`), not a chat-web-style HTTP-only adapter.  The Dock/web UI already selected MiniMax models this way (provider namespace `minimax`, see #9); headless/Shellular now matches.
 
 ## Why "Harness" and not "DSH-MMH" or similar
 

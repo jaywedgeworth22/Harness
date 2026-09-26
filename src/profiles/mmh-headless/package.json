@@ -5,8 +5,10 @@
   "dsh": {
     "profile": {
       "bundles": [
-        "@deepseek-ai/dsh-base"
-      ]
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-headless"
+      ],
+      "patchReload": "startup"
     }
   }
 }

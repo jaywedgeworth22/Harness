@@ -1,11 +1,11 @@
 /**
  * MMH driver support — pure engine logic for the MiniMax harness.
  *
- * MiniMax has no upstream CLI / ACP / sandbox today.  The live adapter is
- * `bridges/mmh/mmh-acp.py`, which talks `api.minimax.io` chat-completions
- * and synthesizes ACP frames.  This module is the TypeScript catalog,
- * error classifier, and env contract so BotFleet can compose an ACP
- * driver later the same way it composes DSH.
+ * Shellular MiniMax now spawns `dsh --profile mmh-headless` (coding path
+ * with MiniMax as the LLM) via `bridges/mmh/mmh-acp.py`.  This TypeScript
+ * module remains the model catalog, error classifier, and env contract for
+ * BotFleet / package consumers.  HTTP chat URL helpers in `../http-client`
+ * stay for direct API callers; they are no longer the Shellular path.
  *
  * ACP runtime (JSON-RPC client, spawn) stays in BotFleet.  See
  * `docs/decisions/0002-acp-core-stays-in-botfleet.md`.

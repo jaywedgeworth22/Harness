@@ -1,9 +1,10 @@
 /**
  * MiniMax Harness HTTP constants.
  *
- * The live ACP adapter is Python (`bridges/mmh/mmh-acp.py`).  This module
- * is the TypeScript copy of the same wire contract so BotFleet and AFC can
- * import the host, path, and default model without duplicating strings.
+ * Shellular MiniMax uses the dsh coding path (`bridges/mmh/mmh-acp.py` →
+ * `dsh --profile mmh-headless`).  These constants remain for direct HTTP
+ * callers and BotFleet/AFC imports that need the host, path, and default
+ * model without duplicating strings.
  */
 
 export const MMH_DEFAULT_BASE_URL = "https://api.minimax.io/v1";
